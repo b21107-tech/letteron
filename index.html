@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이화 익명 편지함</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; display: flex; justify-content: center; }
+        #app-container { width: 100%; max-width: 480px; background: white; min-height: 100vh; box-shadow: 0 0 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        header { background-color: #005A3C; color: white; padding: 20px; text-align: center; font-size: 24px; font-weight: bold; }
+        .content { padding: 20px; flex-grow: 1; }
+        .hidden { display: none !important; }
+        input, textarea, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        textarea { height: 150px; resize: none; }
+        button { width: 100%; padding: 14px; background-color: #005A3C; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+        button:hover { background-color: #00432c; }
+        button.secondary { background-color: #e0e0e0; color: #333; }
+        
+        .tab-container { display: flex; margin-bottom: 15px; border-bottom: 2px solid #eee; }
+        .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; font-weight: bold; color: #999; }
+        .tab.active { color: #005A3C; border-bottom: 3px solid #005A3C; }
+        
+        .letter-card { background: #f9f9f9; border-left: 4px solid #005A3C; padding: 15px; margin-bottom: 15px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .letter-card.sent { border-left-color: #333; }
+        .status-bar { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #666; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        
+        .ticket-badge { background-color: #f1c40f; color: #fff; padding: 4px 8px; border-radius: 12px; font-weight: bold; font-size: 12px; }
+        .profile-card { background: #fff; border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s; }
+        .profile-card:hover { border-color: #005A3C; box-shadow: 0 2px 8px rgba(0,90,60,0.1); }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <header>✉️ 이화 대나무숲 편지</header>
+    
+    <div class="content">
+        <div id="login-screen">
+            <h3 style="text-align: center;">학교 계정으로 로그인해주세요</h3>
+            <p style="text-align: center; color: #666; font-size: 14px;">@ewha.hs.kr 계정만 접근 가능합니다.</p>
+            <button onclick="loginWithEwha()">구글 학교 계정으로 시작하기</button>
+        </div>
+
+        <div id="profile-screen" class="hidden">
+            <h3 style="text-align: center;">활동할 프로필을 만들어주세요</h3>
+            <p style="text-align: center; color: #666; font-size: 14px;">공공 우체통에서 이 닉네임으로 표시됩니다.</p>
+            <input type="text" id="nickname-input" placeholder="사용할 닉네임 (예: 지나가는 3학년, 익명의 곰돌이)">
+            <button onclick="saveProfile()">이 닉네임으로 시작하기</button>
+        </div>
+
+        <div id="main-screen" class="hidden">
+            <div class="status-bar">
+                <div>
+                    <strong id="user-nickname" style="color: #005A3C;"></strong>님
+                    <br><span style="font-size: 12px; color: #999;" id="user-email"></span>
+                </div>
+                <div class="ticket-badge" id="ticket-count">열람권: 0개</div>
+            </div>
+            
+            <button onclick="showComposeScreen()">새 편지 쓰기 (열람권 1개 획득)</button>
+            <button onclick="showPublicPoolScreen()" style="background-color: #27ae60;">공공 우체통 가기 (편지 뽑기)</button>
+            <button onclick="showInboxScreen()" class="secondary">내 편지함 열람 (받은/보낸 편지)</button>
+            <button onclick="logout()" style="background-color: #ff4d4d; margin-top: 30px;">로그아웃</button>
+        </div>
+
+        <div id="compose-screen" class="hidden">
+            <h3>따뜻한 마음을 공공함에 전해보세요</h3>
+            <p style="font-size: 12px; color: #e74c3c;">* 진정성을 위해 300자 이상 작성해야 합니다.<br>* 편지를 보내면 공공함에서 다른 편지를 읽을 수 있는 열람권 1개를 얻습니다.</p>
+            
+            <select id="category">
+                <option value="응원">응원/위로</option>
+                <option value="고민상담">고민 상담</option>
+                <option value="일상">일상 이야기</option>
+            </select>
+            
+            <textarea id="letter-content" placeholder="누군가에게 닿을 따뜻한 편지를 작성해주세요. (비속어는 필터링됩니다)"></textarea>
+            
+            <button onclick="sendLetter()">공공함으로 편지 보내기</button>
+            <button onclick="showMainScreen()" class="secondary">뒤로 가기</button>
+        </div>
+
+        <div id="public-pool-screen" class="hidden">
+            <h3 style="text-align: center;">📬 공공 우체통</h3>
+            <p style="text-align: center; color: #666; font-size: 13px; margin-bottom: 20px;">
+                내용은 볼 수 없습니다. 프로필을 보고 마음이 끌리는 편지를 딱 하나만 골라보세요!<br>
+                (현재 내 열람권: <strong id="pool-ticket-count" style="color:#e74c3c;">0</strong>개)
+            </p>
+            <div id="public-letters-container"></div>
+            <button onclick="showMainScreen()" class="secondary" style="margin-top: 15px;">메인으로 돌아가기</button>
+        </div>
+
+        <div id="inbox-screen" class="hidden">
+            <div class="tab-container">
+                <div id="tab-received" class="tab active" onclick="switchTab('received')">📬 내가 뽑은 편지</div>
+                <div id="tab-sent" class="tab" onclick="switchTab('sent')">📤 내가 보낸 편지</div>
+            </div>
+            
+            <div id="letters-container"></div>
+            <button onclick="showMainScreen()" class="secondary" style="margin-top: 15px;">메인으로 돌아가기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 🚨🚨🚨 [여기에 주목!] 🚨🚨🚨
+    const firebaseConfig = {
+        apiKey: "AIzaSyC5SvPWmuxJl72Ld7gobAYpBEHfBf3r4Ds",
+        authDomain: "letterewha.firebaseapp.com",
+        projectId: "letterewha",
+        storageBucket: "letterewha.firebasestorage.app",
+        messagingSenderId: "265761573288",
+        appId: "1:265761573288:web:ee95ffeac4250836ea359d",
+        measurementId: "G-PH8HGR8P20"
+    };
+    // 🚨🚨🚨 [복사 붙여넣기 끝] 🚨🚨🚨
+    
+    // 파이어베이스 초기화
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    let currentUser = null;
+    let currentUserProfile = null; // { nickname, tickets }
+    let currentTab = 'received'; 
+
+    const badWords = ["바보", "멍청이"]; // 필터링할 단어들
+
+    // 로그인 (이화여고 전용)
+    function loginWithEwha() {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ hd: "ewha.hs.kr" });
+
+        auth.signInWithPopup(provider).then(async (result) => {
+            const user = result.user;
+            if (!user.email.endsWith("@ewha.hs.kr")) {
+                alert("이화여고 학교 계정만 이용 가능합니다!");
+                auth.signOut();
+                return;
+            }
+            currentUser = user;
+            document.getElementById('user-email').innerText = user.email;
+            
+            // 프로필(닉네임) 존재 여부 확인
+            const userDoc = await db.collection('users').doc(user.email).get();
+            if (userDoc.exists) {
+                currentUserProfile = userDoc.data();
+                updateMainScreenInfo();
+                showMainScreen();
+            } else {
+                showProfileScreen();
+            }
+        }).catch((error) => { alert("로그인 실패: " + error.message); });
+    }
+
+    // 프로필 생성
+    async function saveProfile() {
+        const nickname = document.getElementById('nickname-input').value.trim();
+        if (!nickname) {
+            return alert("사용하실 닉네임을 입력해주세요!");
+        }
+        
+        currentUserProfile = {
+            nickname: nickname,
+            tickets: 0 // 초기 열람권 0개
+        };
+
+        try {
+            await db.collection('users').doc(currentUser.email).set(currentUserProfile);
+            updateMainScreenInfo();
+            showMainScreen();
+            alert(`환영합니다, ${nickname}님! 먼저 편지를 한 통 작성하여 열람권을 획득해보세요.`);
+        } catch (error) {
+            alert("프로필 저장 실패: " + error.message);
+        }
+    }
+
+    // 메인 화면 정보 업데이트
+    function updateMainScreenInfo() {
+        document.getElementById('user-nickname').innerText = currentUserProfile.nickname;
+        document.getElementById('ticket-count').innerText = `열람권: ${currentUserProfile.tickets}개`;
+        document.getElementById('pool-ticket-count').innerText = currentUserProfile.tickets;
+    }
+
+    // 편지 발송 로직 (공공함으로 전송 & 티켓 획득)
+    async function sendLetter() {
+        const category = document.getElementById('category').value;
+        let content = document.getElementById('letter-content').value;
+
+        if (content.length < 300) {
+            return alert(`진정성 있는 소통을 위해 300자 이상 작성해주세요. (현재 ${content.length}자)`);
+        }
+
+        // 비속어 처리
+        badWords.forEach(word => {
+            content = content.replace(new RegExp(word, "g"), "***");
+        });
+
+        try {
+            // 편지를 공공 상태(status: 'public')로 저장
+            await db.collection("letters").add({
+                from_email: currentUser.email,
+                from_nickname: currentUserProfile.nickname,
+                category: category,
+                content: content,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'public', // 공공함에 있음
+                read_by: null     // 아직 아무도 안 읽음
+            });
+
+            // 유저의 티켓(열람권) 1 증가
+            await db.collection('users').doc(currentUser.email).update({
+                tickets: firebase.firestore.FieldValue.increment(1)
+            });
+            currentUserProfile.tickets += 1;
+            updateMainScreenInfo();
+
+            alert("공공 우체통에 편지가 성공적으로 담겼습니다! 열람권 1개를 획득하셨습니다.");
+            document.getElementById('letter-content').value = "";
+            showMainScreen();
+        } catch (error) { 
+            alert("발송 실패: " + error.message); 
+        }
+    }
+
+    // 공공 우체통 불러오기
+    function loadPublicPool() {
+        const container = document.getElementById('public-letters-container');
+        container.innerHTML = "<p style='text-align:center; padding: 20px;'>공공 우체통을 여는 중...</p>";
+
+        db.collection("letters").where("status", "==", "public").onSnapshot((snapshot) => {
+            container.innerHTML = "";
+            let letterCount = 0;
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                // 자기가 쓴 편지는 고를 수 없게 숨김 처리
+                if (data.from_email !== currentUser.email) {
+                    letterCount++;
+                    container.innerHTML += `
+                        <div class="profile-card">
+                            <div>
+                                <div style="font-size:12px; color:#005A3C; font-weight:bold; margin-bottom:5px;">[${data.category}]</div>
+                                <div style="font-size:15px; color:#333;">작성자: <strong>${data.from_nickname}</strong></div>
+                            </div>
+                            <button onclick="pickLetter('${doc.id}')" style="width: auto; padding: 8px 12px; font-size: 13px; margin: 0;">열어보기 💌</button>
+                        </div>
+                    `;
+                }
+            });
+
+            if (letterCount === 0) {
+                container.innerHTML = `<p style='color:#666; text-align:center; padding: 20px;'>아직 다른 사람이 쓴 편지가 공공함에 없습니다. 조금만 기다려주세요!</p>`;
+            }
+        }, (error) => {
+            container.innerHTML = `<p style="color:red; text-align:center;">데이터를 불러올 수 없습니다.</p>`;
+        });
+    }
+
+    // 편지 고르기 (티켓 소모 및 내 편지로 귀속)
+    async function pickLetter(letterId) {
+        if (currentUserProfile.tickets <= 0) {
+            return alert("열람권이 부족합니다! 먼저 '새 편지 쓰기'를 통해 편지를 하나 작성해주세요.");
+        }
+
+        if (!confirm("이 편지를 열어보시겠습니까? 열람권 1개가 소모되며, 이 편지는 나만의 편지가 됩니다!")) {
+            return;
+        }
+
+        try {
+            // 편지 상태를 'read'로 변경하고 내 소유(read_by)로 등록
+            await db.collection("letters").doc(letterId).update({
+                status: 'read',
+                read_by: currentUser.email
+            });
+
+            // 내 열람권 1개 차감
+            await db.collection('users').doc(currentUser.email).update({
+                tickets: firebase.firestore.FieldValue.increment(-1)
+            });
+            currentUserProfile.tickets -= 1;
+            updateMainScreenInfo();
+
+            alert("편지를 성공적으로 열람했습니다! 내 편지함으로 이동합니다.");
+            showInboxScreen();
+            switchTab('received');
+        } catch (error) {
+            alert("오류가 발생했습니다: " + error.message);
+        }
+    }
+
+    // 편지함 불러오기 로직 (인덱스 에러 방지용)
+    function loadLetters() {
+        const container = document.getElementById('letters-container');
+        container.innerHTML = "<p style='text-align:center; padding: 20px;'>편지함을 실시간으로 여는 중...</p>";
+
+        let query;
+        if (currentTab === 'received') {
+            // 내가 '공공함'에서 뽑아서 읽은 편지들
+            query = db.collection("letters").where("read_by", "==", currentUser.email);
+        } else {
+            // 내가 쓴 편지들
+            query = db.collection("letters").where("from_email", "==", currentUser.email);
+        }
+
+        query.onSnapshot((snapshot) => {
+            container.innerHTML = "";
+            if (snapshot.empty) {
+                container.innerHTML = `<p style='color:#666; text-align:center; padding: 20px;'>아직 ${currentTab === 'received' ? '뽑은' : '보낸'} 편지가 없습니다.</p>`;
+                return;
+            }
+            
+            // 데이터를 가져와서 시간순으로 수동 정렬
+            const letters = [];
+            snapshot.forEach((doc) => letters.push(doc.data()));
+            letters.sort((a, b) => {
+                const timeA = a.timestamp ? a.timestamp.toMillis() : Date.now();
+                const timeB = b.timestamp ? b.timestamp.toMillis() : Date.now();
+                return timeB - timeA; // 최신순 정렬
+            });
+
+            letters.forEach((data) => {
+                const time = data.timestamp ? data.timestamp.toDate().toLocaleString() : "방금 전";
+                
+                if (currentTab === 'received') {
+                    // [내가 뽑은 편지]
+                    container.innerHTML += `
+                        <div class="letter-card">
+                            <div style="font-size:12px; color:#005A3C; font-weight:bold;">[${data.category}] From. ${data.from_nickname}</div>
+                            <p style="margin: 10px 0; font-size: 15px; line-height: 1.5; color:#333;">${data.content.replace(/\n/g, '<br>')}</p>
+                            <div style="font-size:11px; color:#999; text-align:right;">가져온 시간: ${time}</div>
+                        </div>`;
+                } else {
+                    // [내가 보낸 편지] 상대가 읽었는지(status) 표시
+                    const readStatus = data.status === 'public' ? '🕊️ 공공함에서 누군가를 기다리는 중' : '💌 누군가 내 편지를 가져갔습니다!';
+                    container.innerHTML += `
+                        <div class="letter-card sent">
+                            <div style="font-size:12px; color:#333; font-weight:bold;">[${data.category}] 내가 쓴 편지</div>
+                            <p style="margin: 10px 0; font-size: 15px; line-height: 1.5; color: #555;">${data.content.replace(/\n/g, '<br>')}</p>
+                            <div style="font-size:12px; color:#e67e22; font-weight:bold; margin-top: 10px;">${readStatus}</div>
+                            <div style="font-size:11px; color:#999; text-align:right; margin-top: 5px;">작성: ${time}</div>
+                        </div>`;
+                }
+            });
+        }, (error) => {
+            container.innerHTML = `<p style="color:red; text-align:center; padding:20px;">데이터를 불러올 수 없습니다.</p>`;
+        });
+    }
+
+    // UI 화면 전환 함수들
+    function hideAllScreens() {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('profile-screen').classList.add('hidden');
+        document.getElementById('main-screen').classList.add('hidden');
+        document.getElementById('compose-screen').classList.add('hidden');
+        document.getElementById('public-pool-screen').classList.add('hidden');
+        document.getElementById('inbox-screen').classList.add('hidden');
+    }
+
+    function showProfileScreen() {
+        hideAllScreens();
+        document.getElementById('profile-screen').classList.remove('hidden');
+    }
+
+    function showMainScreen() {
+        hideAllScreens();
+        updateMainScreenInfo();
+        document.getElementById('main-screen').classList.remove('hidden');
+    }
+
+    function showComposeScreen() {
+        hideAllScreens();
+        document.getElementById('compose-screen').classList.remove('hidden');
+    }
+
+    function showPublicPoolScreen() {
+        hideAllScreens();
+        updateMainScreenInfo();
+        document.getElementById('public-pool-screen').classList.remove('hidden');
+        loadPublicPool();
+    }
+
+    function showInboxScreen() {
+        hideAllScreens();
+        document.getElementById('inbox-screen').classList.remove('hidden');
+        switchTab('received');
+    }
+
+    function switchTab(tabName) {
+        currentTab = tabName;
+        document.getElementById('tab-received').classList.toggle('active', tabName === 'received');
+        document.getElementById('tab-sent').classList.toggle('active', tabName === 'sent');
+        loadLetters();
+    }
+
+    function logout() {
+        auth.signOut().then(() => {
+            currentUser = null;
+            currentUserProfile = null;
+            hideAllScreens();
+            document.getElementById('login-screen').classList.remove('hidden');
+        });
+    }
+</script>
+</body>
+</html>
